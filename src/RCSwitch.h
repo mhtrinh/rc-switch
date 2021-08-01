@@ -92,6 +92,7 @@ class RCSwitch {
     unsigned int getReceivedBitlength();
     unsigned int getReceivedDelay();
     unsigned int getReceivedProtocol();
+    unsigned int getReceivedSumError();    
     unsigned int* getReceivedRawdata();
     #endif
   
@@ -176,6 +177,8 @@ class RCSwitch {
     volatile static unsigned int nReceivedBitlength;
     volatile static unsigned int nReceivedDelay;
     volatile static unsigned int nReceivedProtocol;
+    volatile static unsigned int sumError;
+    
     const static unsigned int nSeparationLimit;
     /* 
      * timings[0] contains sync timing, followed by a number of bits

@@ -139,6 +139,8 @@ volatile unsigned long long RCSwitch::nReceivedValue = 0;
 volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
 volatile unsigned int RCSwitch::nReceivedProtocol = 0;
+volatile unsigned int RCSwitch::sumError = 0;
+
 int RCSwitch::nReceiveTolerance = 45;
 const unsigned int VAR_ISR_ATTR RCSwitch::nSeparationLimit = 2300;    // 4300 default
 // separationLimit: minimum microseconds between received codes, closer codes are ignored.
@@ -689,6 +691,10 @@ unsigned int RCSwitch::getReceivedProtocol() {
   return RCSwitch::nReceivedProtocol;
 }
 
+unsigned int RCSwitch::getReceivedSumError() {
+  return RCSwitch::sumError;
+}
+
 unsigned int* RCSwitch::getReceivedRawdata() {
   return RCSwitch::timings;
 }
@@ -703,6 +709,7 @@ static inline unsigned int diff(int A, int B) {
  */
 void RECEIVE_ATTR RCSwitch::receiveProtocol(unsigned int changeCount) {
 
+  unsigned int minError=4294967295;
   for (unsigned int p = 1; p <= numProto; p++) {
 
 #if defined(ESP8266) || defined(ESP32)
@@ -774,29 +781,50 @@ void RECEIVE_ATTR RCSwitch::receiveProtocol(unsigned int changeCount) {
     }
     bool matched=true;
 
+    unsigned int sumError=0;
+    unsigned int error1=0;
+    unsigned int error2=0;        
     for (unsigned int i = firstDataTiming; i < firstDataTiming + bitChangeCount; i += 2) {
         code <<= 1;
-        if (diff(RCSwitch::timings[i], delay * pro.zero.high) < delayTolerance &&
-            diff(RCSwitch::timings[i + 1], delay * pro.zero.low) < delayTolerance) {
-            // zero
-        } else if (diff(RCSwitch::timings[i], delay * pro.one.high) < delayTolerance &&
-                  diff(RCSwitch::timings[i + 1], delay * pro.one.low) < delayTolerance) {
-            // one
-            code |= 1;
-        } else {
-            // Failed
-            matched=false;
-            break;
-        }
-    }
-    if (!matched) 
-      break;
 
-    if (bitChangeCount > 14) {    // ignore very short transmissions: no device sends them, so this must be noise
+        // zero
+        error1 = diff(RCSwitch::timings[i], delay * pro.zero.high);
+        error2 = diff(RCSwitch::timings[i + 1], delay * pro.zero.low);
+        if (error1 < delayTolerance &&
+            error2 < delayTolerance) {
+            sumError += error1 + error2;
+            continue;
+        }
+                
+        // one
+        error1 = diff(RCSwitch::timings[i], delay * pro.one.high);
+        error2 = diff(RCSwitch::timings[i + 1], delay * pro.one.low);
+        if (error1 < delayTolerance &&
+            error2 < delayTolerance) {
+            code |= 1;
+            sumError += error1 + error2;
+            continue;
+        }
+
+        // Failed
+        matched=false;
+        break;    
+    }
+
+    if (!matched) 
+      continue;
+
+    if (bitChangeCount > 14) {    // ignore very short transmissions: no device sends them, so this must be noise    
+      // if (sumError < minError) {  // Update with the protocol giving the minimum error
+      // if (p == 1) {  // Update with the protocol giving the minimum error
         RCSwitch::nReceivedValue = code;
         RCSwitch::nReceivedBitlength = bitChangeCount / 2;
         RCSwitch::nReceivedDelay = delay;
-        RCSwitch::nReceivedProtocol = p;      
+        RCSwitch::nReceivedProtocol = p;  
+        RCSwitch::sumError = sumError;
+
+        break; // First match
+      // }
     }    
   }
 }

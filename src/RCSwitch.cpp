@@ -139,7 +139,7 @@ volatile unsigned long long RCSwitch::nReceivedValue = 0;
 volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
 volatile unsigned int RCSwitch::nReceivedProtocol = 0;
-int RCSwitch::nReceiveTolerance = 60;
+int RCSwitch::nReceiveTolerance = 45;
 const unsigned int VAR_ISR_ATTR RCSwitch::nSeparationLimit = 2300;    // 4300 default
 // separationLimit: minimum microseconds between received codes, closer codes are ignored.
 // according to discussion on issue #14 it might be more suitable to set the separation
@@ -701,7 +701,10 @@ static inline unsigned int diff(int A, int B) {
 /**
  *
  */
-bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) {
+void RECEIVE_ATTR RCSwitch::receiveProtocol(unsigned int changeCount) {
+
+  for (unsigned int p = 1; p <= numProto; p++) {
+
 #if defined(ESP8266) || defined(ESP32)
     const Protocol &pro = proto[p-1];
 #else
@@ -745,22 +748,22 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
     // bitChangeCount - количество импульсов в data
 
     /* For protocols that start low, the sync period looks like
-     *               _________
-     * _____________|         |XXXXXXXXXXXX|
-     *
-     * |--1st dur--|-2nd dur-|-Start data-|
-     *
-     * The 3rd saved duration starts the data.
-     *
-     * For protocols that start high, the sync period looks like
-     *
-     *  ______________
-     * |              |____________|XXXXXXXXXXXXX|
-     *
-     * |-filtered out-|--1st dur--|--Start data--|
-     *
-     * The 2nd saved duration starts the data
-     */
+    *               _________
+    * _____________|         |XXXXXXXXXXXX|
+    *
+    * |--1st dur--|-2nd dur-|-Start data-|
+    *
+    * The 3rd saved duration starts the data.
+    *
+    * For protocols that start high, the sync period looks like
+    *
+    *  ______________
+    * |              |____________|XXXXXXXXXXXXX|
+    *
+    * |-filtered out-|--1st dur--|--Start data--|
+    *
+    * The 2nd saved duration starts the data
+    */
     // если invertedSignal=false, то сигнал начинается с 1 элемента массива (высокий уровень)
     // если invertedSignal=true, то сигнал начинается со 2 элемента массива (низкий уровень)
     // добавляем поправку на Преамбулу и Хедер
@@ -769,6 +772,7 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
     if (bitChangeCount > 128) {
       bitChangeCount = 128;
     }
+    bool matched=true;
 
     for (unsigned int i = firstDataTiming; i < firstDataTiming + bitChangeCount; i += 2) {
         code <<= 1;
@@ -776,24 +780,25 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
             diff(RCSwitch::timings[i + 1], delay * pro.zero.low) < delayTolerance) {
             // zero
         } else if (diff(RCSwitch::timings[i], delay * pro.one.high) < delayTolerance &&
-                   diff(RCSwitch::timings[i + 1], delay * pro.one.low) < delayTolerance) {
+                  diff(RCSwitch::timings[i + 1], delay * pro.one.low) < delayTolerance) {
             // one
             code |= 1;
         } else {
             // Failed
-            return false;
+            matched=false;
+            break;
         }
     }
+    if (!matched) 
+      break;
 
     if (bitChangeCount > 14) {    // ignore very short transmissions: no device sends them, so this must be noise
         RCSwitch::nReceivedValue = code;
         RCSwitch::nReceivedBitlength = bitChangeCount / 2;
         RCSwitch::nReceivedDelay = delay;
-        RCSwitch::nReceivedProtocol = p;
-        return true;
-    }
-
-    return false;
+        RCSwitch::nReceivedProtocol = p;      
+    }    
+  }
 }
 
 void RECEIVE_ATTR RCSwitch::handleInterrupt() {
@@ -837,12 +842,13 @@ void RECEIVE_ATTR RCSwitch::handleInterrupt() {
       repeatCount++;
       // при приеме второго повторного начинаем анализ принятого первым
       if (repeatCount == 1) {
-        for(unsigned int i = 1; i <= numProto; i++) {
-          if (receiveProtocol(i, changeCount)) {
-            // receive succeeded for protocol i
-            break;
-          }
-        }
+        receiveProtocol(changeCount);
+        // for(unsigned int i = 1; i <= numProto; i++) {
+        //   if (receiveProtocol(i, changeCount)) {
+        //     // receive succeeded for protocol i
+        //     break;
+        //   }
+        // }
         // очищаем количество повторных пакетов
         repeatCount = 0;
       }

@@ -134,12 +134,19 @@ enum {
    numProto = sizeof(proto) / sizeof(proto[0])
 };
 
+enum {
+  FIRST_PROTOCOL_MATCH,
+  EIGTH_BIT_LENGTH,
+  LEAST_TIME_ERROR
+};
+
 #if not defined( RCSwitchDisableReceiving )
 volatile unsigned long long RCSwitch::nReceivedValue = 0;
 volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
 volatile unsigned int RCSwitch::nReceivedProtocol = 0;
 volatile unsigned int RCSwitch::sumError = 0;
+volatile unsigned int RCSwitch::mode = FIRST_PROTOCOL_MATCH;
 
 int RCSwitch::nReceiveTolerance = 45;
 const unsigned int VAR_ISR_ATTR RCSwitch::nSeparationLimit = 2300;    // 4300 default
@@ -814,17 +821,55 @@ void RECEIVE_ATTR RCSwitch::receiveProtocol(unsigned int changeCount) {
     if (!matched) 
       continue;
 
+    bool doUpdate=false;    
     if (bitChangeCount > 14) {    // ignore very short transmissions: no device sends them, so this must be noise    
-      // if (sumError < minError) {  // Update with the protocol giving the minimum error
-      // if (p == 1) {  // Update with the protocol giving the minimum error
+      // First protocol match: we update the received data no matter what it is
+      if (RCSwitch::nReceivedValue == 0)
+      {
+        doUpdate=true;
+      }
+
+      // Second matching protocol
+      else {
+
+        if (RCSwitch::mode == FIRST_PROTOCOL_MATCH) 
+          break;
+
+
+        else if (RCSwitch::mode == EIGTH_BIT_LENGTH)
+        {
+          // Bitlength not modulo 8 : do nothing
+          if ((bitChangeCount / 2) % 8 != 0)
+            continue;
+
+          // If previous is not modulo 8 : update            
+          if (RCSwitch::nReceivedBitlength % 8 != 0)
+          {
+            doUpdate=true;           
+          }
+          // Previous is also modulo 8: update if this error is smaller
+          else {
+            if (sumError < RCSwitch::sumError)
+              doUpdate=true;
+          }
+        }
+
+        // LESS TIME ERROR
+        else {
+          if (sumError < RCSwitch::sumError)
+            doUpdate=true;
+        }
+        
+      }
+
+      if (doUpdate)
+      {
         RCSwitch::nReceivedValue = code;
         RCSwitch::nReceivedBitlength = bitChangeCount / 2;
         RCSwitch::nReceivedDelay = delay;
         RCSwitch::nReceivedProtocol = p;  
-        RCSwitch::sumError = sumError;
-
-        break; // First match
-      // }
+        RCSwitch::sumError = sumError;    
+      }
     }    
   }
 }

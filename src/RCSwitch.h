@@ -178,6 +178,7 @@ class RCSwitch {
     volatile static unsigned int nReceivedDelay;
     volatile static unsigned int nReceivedProtocol;
     volatile static unsigned int sumError;
+    volatile static unsigned int mode;
     
     const static unsigned int nSeparationLimit;
     /* 

@@ -137,7 +137,8 @@ enum {
 enum {
   FIRST_PROTOCOL_MATCH,
   EIGTH_BIT_LENGTH,
-  LEAST_TIME_ERROR
+  LEAST_TIME_ERROR,
+  LONGEST_BIT_LENGTH
 };
 
 #if not defined( RCSwitchDisableReceiving )
@@ -146,7 +147,7 @@ volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
 volatile unsigned int RCSwitch::nReceivedProtocol = 0;
 volatile unsigned int RCSwitch::sumError = 0;
-volatile unsigned int RCSwitch::mode = FIRST_PROTOCOL_MATCH;
+volatile unsigned int RCSwitch::mode = LONGEST_BIT_LENGTH;
 
 int RCSwitch::nReceiveTolerance = 45;
 const unsigned int VAR_ISR_ATTR RCSwitch::nSeparationLimit = 2300;    // 4300 default
@@ -853,6 +854,19 @@ void RECEIVE_ATTR RCSwitch::receiveProtocol(unsigned int changeCount) {
               doUpdate=true;
           }
         }
+
+
+        else if (RCSwitch::mode == LONGEST_BIT_LENGTH)
+        {
+          if (RCSwitch::nReceivedBitlength < (bitChangeCount / 2) )
+            doUpdate=true;
+          else if (RCSwitch::nReceivedBitlength == (bitChangeCount / 2))
+          {
+            if (sumError < RCSwitch::sumError)
+              doUpdate=true;
+          }                   
+        }
+
 
         // LESS TIME ERROR
         else {
